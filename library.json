@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "keywords": ["wishbone", "spi", "papilio"],
   "description": "Wishbone-over-SPI master helper for Papilio projects (platformio library).",
-  "repository": "https://github.com/GadgetFactory/papilio_wishbone_spi_master",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GadgetFactory/papilio_wishbone_spi_master.git"
+  },
   "authors": [
     { "name": "GadgetFactory" }
   ],
