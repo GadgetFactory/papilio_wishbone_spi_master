@@ -23,6 +23,15 @@ module wb_address_decoder (
     output reg s0_wb_we_o,
     input wire s0_wb_ack_i,
 
+    // Slave 1 (HDMI)
+    output reg [7:0] s1_wb_adr_o,
+    output reg [7:0] s1_wb_dat_o,
+    input wire [7:0] s1_wb_dat_i,
+    output reg s1_wb_cyc_o,
+    output reg s1_wb_stb_o,
+    output reg s1_wb_we_o,
+    input wire s1_wb_ack_i,
+
     // Slave 2 (USB Serial / UART) - matches top.v naming
     output reg [7:0] s2_wb_adr_o,
     output reg [7:0] s2_wb_dat_o,
@@ -38,6 +47,7 @@ module wb_address_decoder (
     always @(*) begin
         // Default deasserts
         s0_wb_adr_o = wb_adr_i; s0_wb_dat_o = wb_dat_i; s0_wb_cyc_o = 0; s0_wb_stb_o = 0; s0_wb_we_o = 0;
+        s1_wb_adr_o = wb_adr_i; s1_wb_dat_o = wb_dat_i; s1_wb_cyc_o = 0; s1_wb_stb_o = 0; s1_wb_we_o = 0;
         s2_wb_adr_o = wb_adr_i; s2_wb_dat_o = wb_dat_i; s2_wb_cyc_o = 0; s2_wb_stb_o = 0; s2_wb_we_o = 0;
         wb_dat_o = 8'h00;
         wb_ack_o = 0;
@@ -50,6 +60,14 @@ module wb_address_decoder (
                 s0_wb_we_o = wb_we_i;
                 wb_dat_o = s0_wb_dat_i;
                 wb_ack_o = s0_wb_ack_i;
+            end
+            4'h1: begin
+                // 0x10-0x1F -> HDMI (slave 1)
+                s1_wb_cyc_o = wb_cyc_i & wb_stb_i;
+                s1_wb_stb_o = wb_cyc_i & wb_stb_i;
+                s1_wb_we_o = wb_we_i;
+                wb_dat_o = s1_wb_dat_i;
+                wb_ack_o = s1_wb_ack_i;
             end
             4'h2: begin
                 // 0x20-0x2F -> USB Serial (slave 2)
