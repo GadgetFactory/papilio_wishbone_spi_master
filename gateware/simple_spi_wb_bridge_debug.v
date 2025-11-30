@@ -11,8 +11,8 @@ module simple_spi_wb_bridge_debug (
     input wire spi_mosi,
     input wire spi_cs_n,
     
-    // Wishbone Master Interface (8-bit)
-    output reg [7:0] wb_adr_o,
+    // Wishbone Master Interface (16-bit address, 8-bit data)
+    output reg [15:0] wb_adr_o,
     output reg [7:0] wb_dat_o,
     input wire [7:0] wb_dat_i,
     output reg wb_we_o,
@@ -42,11 +42,12 @@ module simple_spi_wb_bridge_debug (
     wire spi_cs_active = !spi_cs_n_d2;
     wire spi_sclk_posedge = spi_sclk_d1 && !spi_sclk_d2;
     
-    // Byte receiver
+    // Byte receiver - Extended to 4 bytes for 16-bit addressing
     reg [2:0] bit_count;
     reg [7:0] byte_shift;
-    reg [1:0] byte_count;
-    reg [7:0] cmd, addr, data;
+    reg [2:0] byte_count;  // Changed from [1:0] to [2:0] for 4 bytes
+    reg [7:0] cmd, addr_high, addr_low, data;
+    reg [15:0] addr;  // 16-bit address
     reg transaction_complete;
     
     always @(posedge clk or posedge rst) begin
@@ -55,6 +56,8 @@ module simple_spi_wb_bridge_debug (
             byte_shift <= 0;
             byte_count <= 0;
             cmd <= 0;
+            addr_high <= 0;
+            addr_low <= 0;
             addr <= 0;
             data <= 0;
             transaction_complete <= 0;
@@ -72,10 +75,12 @@ module simple_spi_wb_bridge_debug (
                     bit_count <= 0;
                     
                     case (byte_count)
-                        2'd0: cmd <= {byte_shift[6:0], spi_mosi_d2};
-                        2'd1: addr <= {byte_shift[6:0], spi_mosi_d2};
-                        2'd2: begin
+                        3'd0: cmd <= {byte_shift[6:0], spi_mosi_d2};
+                        3'd1: addr_high <= {byte_shift[6:0], spi_mosi_d2};
+                        3'd2: addr_low <= {byte_shift[6:0], spi_mosi_d2};
+                        3'd3: begin
                             data <= {byte_shift[6:0], spi_mosi_d2};
+                            addr <= {addr_high, addr_low};  // Combine address bytes
                             transaction_complete <= 1;
                         end
                     endcase
@@ -92,7 +97,8 @@ module simple_spi_wb_bridge_debug (
     localparam WB_DONE = 2'd2;
     
     reg [1:0] wb_state;
-    reg [7:0] last_cmd, last_addr, last_data;
+    reg [7:0] last_cmd, last_data;
+    reg [15:0] last_addr;  // Changed to 16-bit
     reg wb_started;  // Debug flag
     
     always @(posedge clk or posedge rst) begin
@@ -116,14 +122,14 @@ module simple_spi_wb_bridge_debug (
                     
                     if (transaction_complete && cmd == 8'h01) begin
                         // Start Wishbone write transaction
-                        wb_adr_o <= addr;
+                        wb_adr_o <= addr;  // Now 16-bit
                         wb_dat_o <= data;
                         wb_we_o <= 1;
                         wb_cyc_o <= 1;
                         wb_stb_o <= 1;
                         wb_state <= WB_WAIT_ACK;
                         last_cmd <= cmd;
-                        last_addr <= addr;
+                        last_addr <= addr;  // 16-bit
                         last_data <= data;
                         wb_started <= 1;
                     end
@@ -176,8 +182,8 @@ module simple_spi_wb_bridge_debug (
         .busy(uart_busy)
     );
     
-    // UART state machine - format: "C:xx A:xx D:xx S:x\n"
-    reg [4:0] uart_state;
+    // UART state machine - format: "C:xx A:xxxx D:xx S:x\n" (16-bit address now)
+    reg [5:0] uart_state;  // Extended for more states
     localparam UART_IDLE = 0;
     localparam UART_C = 1;
     localparam UART_C_COLON = 2;
@@ -186,18 +192,20 @@ module simple_spi_wb_bridge_debug (
     localparam UART_SPACE1 = 5;
     localparam UART_A = 6;
     localparam UART_A_COLON = 7;
-    localparam UART_A_HI = 8;
-    localparam UART_A_LO = 9;
-    localparam UART_SPACE2 = 10;
-    localparam UART_D = 11;
-    localparam UART_D_COLON = 12;
-    localparam UART_D_HI = 13;
-    localparam UART_D_LO = 14;
-    localparam UART_SPACE3 = 15;
-    localparam UART_S = 16;
-    localparam UART_S_COLON = 17;
-    localparam UART_S_VAL = 18;
-    localparam UART_NL = 19;
+    localparam UART_A_HH = 8;   // Address high nibble of high byte
+    localparam UART_A_HL = 9;   // Address low nibble of high byte
+    localparam UART_A_LH = 10;  // Address high nibble of low byte
+    localparam UART_A_LL = 11;  // Address low nibble of low byte
+    localparam UART_SPACE2 = 12;
+    localparam UART_D = 13;
+    localparam UART_D_COLON = 14;
+    localparam UART_D_HI = 15;
+    localparam UART_D_LO = 16;
+    localparam UART_SPACE3 = 17;
+    localparam UART_S = 18;
+    localparam UART_S_COLON = 19;
+    localparam UART_S_VAL = 20;
+    localparam UART_NL = 21;
     
     function [7:0] hex_to_ascii;
         input [3:0] hex;
@@ -242,14 +250,22 @@ module simple_spi_wb_bridge_debug (
                 end
                 
                 UART_A_COLON: if (!uart_busy && !uart_send) begin
-                    uart_data <= 8'd58; uart_send <= 1; uart_state <= UART_A_HI;
+                    uart_data <= 8'd58; uart_send <= 1; uart_state <= UART_A_HH;
                 end
                 
-                UART_A_HI: if (!uart_busy && !uart_send) begin
-                    uart_data <= hex_to_ascii(last_addr[7:4]); uart_send <= 1; uart_state <= UART_A_LO;
+                UART_A_HH: if (!uart_busy && !uart_send) begin
+                    uart_data <= hex_to_ascii(last_addr[15:12]); uart_send <= 1; uart_state <= UART_A_HL;
                 end
                 
-                UART_A_LO: if (!uart_busy && !uart_send) begin
+                UART_A_HL: if (!uart_busy && !uart_send) begin
+                    uart_data <= hex_to_ascii(last_addr[11:8]); uart_send <= 1; uart_state <= UART_A_LH;
+                end
+                
+                UART_A_LH: if (!uart_busy && !uart_send) begin
+                    uart_data <= hex_to_ascii(last_addr[7:4]); uart_send <= 1; uart_state <= UART_A_LL;
+                end
+                
+                UART_A_LL: if (!uart_busy && !uart_send) begin
                     uart_data <= hex_to_ascii(last_addr[3:0]); uart_send <= 1; uart_state <= UART_SPACE2;
                 end
                 
