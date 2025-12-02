@@ -2,12 +2,63 @@
 
 static SPIClass* _wbSpi = nullptr;
 static int _wbCs = -1;
+static bool _fpgaReady = false;
 
 void wishboneInit(SPIClass* spi, int cs_pin) {
   _wbSpi = spi;
   _wbCs = cs_pin;
   pinMode(_wbCs, OUTPUT);
   digitalWrite(_wbCs, HIGH);
+  
+  // Wait for FPGA to be ready
+  wishboneWaitForFPGA();
+}
+
+bool wishboneWaitForFPGA(unsigned long bootloaderDelayMs, unsigned long timeoutMs) {
+  // Wait for FPGA bootloader (typically 3 seconds) plus margin
+  Serial.println("Waiting for FPGA bootloader...");
+  delay(bootloaderDelayMs);
+  
+  // Poll until we can communicate with the FPGA
+  Serial.println("Waiting for FPGA to be ready...");
+  unsigned long start = millis();
+  int attempts = 0;
+  
+  while (millis() - start < timeoutMs) {
+    if (wishboneIsReady()) {
+      Serial.print("FPGA ready after ");
+      Serial.print(attempts * 100);
+      Serial.println("ms additional wait");
+      _fpgaReady = true;
+      return true;
+    }
+    delay(100);
+    attempts++;
+  }
+  
+  Serial.println("Warning: FPGA may not be responding correctly");
+  _fpgaReady = false;
+  return false;
+}
+
+bool wishboneIsReady() {
+  if (!_wbSpi) return false;
+  
+  // Try to read video mode register at address 0x0000
+  // Should return a valid mode (0, 1, or 2)
+  _wbSpi->beginTransaction(SPISettings(8000000, MSBFIRST, SPI_MODE0));
+  digitalWrite(_wbCs, LOW);
+  
+  _wbSpi->transfer(0x00);  // CMD: Read command
+  _wbSpi->transfer(0x00);  // ADDR_HIGH: 0x00
+  _wbSpi->transfer(0x00);  // ADDR_LOW: 0x00
+  delayMicroseconds(2);
+  uint8_t mode = _wbSpi->transfer(0x00);  // DATA: read result
+  
+  digitalWrite(_wbCs, HIGH);
+  _wbSpi->endTransaction();
+  
+  return (mode <= 2);
 }
 
 void wishboneWrite8(uint16_t address, uint8_t data) {

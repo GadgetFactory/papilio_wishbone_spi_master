@@ -5,7 +5,17 @@
 #include <SPI.h>
 
 // Initialize the Wishbone SPI helper with an SPIClass instance and CS pin
+// This waits for the FPGA bootloader to complete before returning
 void wishboneInit(SPIClass* spi, int cs_pin);
+
+// Wait for FPGA to be ready (called automatically by wishboneInit)
+// Returns true if FPGA responded, false if timeout
+// bootloaderDelayMs: time to wait for bootloader (default 4000ms for 3s bootloader + margin)
+// timeoutMs: additional polling timeout (default 5000ms)
+bool wishboneWaitForFPGA(unsigned long bootloaderDelayMs = 4000, unsigned long timeoutMs = 5000);
+
+// Check if FPGA is responding by reading video mode register
+bool wishboneIsReady();
 
 // 8-bit access helpers (8-bit address, 8-bit data)
 void wishboneWrite8(uint16_t address, uint8_t data);
